@@ -10,68 +10,41 @@
 
 ## Evidências (prints)
 
-### Passo 1 — Antes de trancar
-- `ataques.ps1 -Teste Falso` contra o Worker antigo → **200**, e o 999 aparecendo em `/list?sensor=temp`:
-
-  ![Passo 1 - Falso](prints/p1_falso.png)
-  ![Passo 1 - list com 999](prints/p1_list_999.png)
-
-- `cofre.html` em `ws :8080`, mostrando estações da turma **LEGÍVEIS**:
-
-  ![Passo 1 - espião](prints/p1_espiao.png)
-
-### Passo 3 — Camada 2 (API key)
+### Camada (API key)
 - `ataques.ps1 -Teste Todos` com `-ApiKey`: `Falso`/`SemChave` → 401, `ComChave` → 200:
 
-  ![Passo 3](prints/p3_apikey.png)
+  ![Camada (API key)](prints/p3_apikey.png)
 
-### Passo 4 — Camada 1 (TLS)
-- Serial Monitor: NTP ok, MQTT na **8885** ok, HTTPS com **200**:
+### Camada (TLS)
+- Serial Monitor: NTP ok, MQTT na **8883** (TLS + login) ok, HTTPS com **200**:
 
-  ![Passo 4 - serial ok](prints/p4_serial_ok.png)
+  ![Camada (TLS)](prints/p4_serial_ok.png)
 
-- Serial Monitor com a **CA errada**: falha de TLS (`X509 - Certificate verification failed`):
-
-  ![Passo 4 - CA errada](prints/p4_ca_errada.png)
-
-### Passos 5 e 6 — Camada 3 (HMAC + anti-replay)
+### Camada (HMAC + anti-replay)
 - **Antes** (`EXIGIR_ASSINATURA = nao`): `Adulterado`, `Replay` e `Atrasado` passando com 200:
 
-  ![Passo 5](prints/p5_antes_hmac.png)
+  ![Camada (HMAC + anti-replay)](prints/p5_antes_hmac.png)
 
-- **Depois** (`EXIGIR_ASSINATURA = sim`): `Adulterado` 401, `Replay` 200 → 401, `Atrasado` 401:
+- **Depois** (`EXIGIR_ASSINATURA = sim`): `Adulterado` 401, `Replay` 200 → 401, `Atrasado` 401, e no fim a lista de **tentativas recusadas**:
 
-  ![Passo 6](prints/p6_depois_hmac.png)
+  ![Camada Assinatura (HMAC + anti-replay)](prints/p6_depois_hmac.png)
 
-- Lista de **tentativas recusadas** (fim do script):
+### Camada (cofre AES-GCM)
+- Tópico `sis1a/hirrua/cofre` aparecendo como **CIFRADO** na seção 1 e os valores **decifrados** com a chave certa (✔ aberto) na seção 2:
 
-  ![Passo 6 - tentativas](prints/p6_tentativas.png)
-
-### Passo 7 — Camada 4 (cofre AES-GCM)
-- Seu tópico `/cofre` aparecendo como **CIFRADO** na seção 1:
-
-  ![Passo 7 - cifrado](prints/p7_cifrado.png)
-
-- Valores **decifrados** com a chave certa (✔ aberto):
-
-  ![Passo 7 - aberto](prints/p7_aberto.png)
-
-- Chave com 1 caractere trocado, ou chave de colega (✘ não abriu):
-
-  ![Passo 7 - não abriu](prints/p7_nao_abriu.png)
+  ![Camada (cofre AES-GCM)](prints/p7_cifrado_aberto.png)
 
 ### Passo 8 — Comandos assinados
-- `OK: led:ON` (assinado): ![](prints/p8_ok.png)
-- `RECUSADO: sem assinatura`: ![](prints/p8_sem_assinatura.png)
-- `RECUSADO: replay (comando repetido)`: ![](prints/p8_replay.png)
-- `RECUSADO: assinatura invalida` (chave de colega): ![](prints/p8_chave_alheia.png)
+- `OK: led:ON` (assinado) — resposta em `sis1a/hirrua/status` e LED em ON no cofre:
+
+  ![Passo 8 - OK](prints/p8_ok.png)
 
 ---
 
-## O que vocês mudaram no código
+## O que mudou no código
 
 - **`estacao_cofre.ino`** — `DHTTYPE` trocado para `DHT22`, porque a estação roda no Wokwi, que só oferece o DHT22. Também foi incluído o `WIFI_CANAL` opcional no `WiFi.begin()`, já que a rede `Wokwi-GUEST` fica no canal 6 e informar o canal deixa a conexão bem mais rápida (na placa física basta não definir `WIFI_CANAL` no `config.h`).
-- **`certificados.h`** — o `CA_WORKER` traz as raízes das autoridades que a Cloudflare usa no `*.workers.dev` (Google Trust Services, Let's Encrypt, SSL.com e Sectigo/USERTrust), assim o ESP32 continua validando o certificado mesmo quando a Cloudflare renova o certificado com outra CA. O `CA_MOSQUITTO` é o `mosquitto.org.crt` oficial (válido até 07/06/2030).
+- **`certificados.h`** — o `CA_WORKER` traz as raízes das autoridades que a Cloudflare usa no `*.workers.dev`, assim o ESP32 continua validando o certificado mesmo quando a Cloudflare renova o certificado com outra CA. O `CA_MOSQUITTO` é o `mosquitto.org.crt` oficial.
 - **`worker.js`** — usado sem alterações, com o binding `DB` apontando para o banco D1 `iot`.
 - **`cofre.html`** — só o prefixo padrão trocado para `hirrua`.
 - **`.gitignore`** — inclui `config.h`, então nenhuma chave vai para o repositório.
@@ -106,13 +79,8 @@
 
 7. **A chave AES foi colada à mão na página. Como resolver isso num produto com mil dispositivos vendidos?**
 
-   O caminho é usar criptografia assimétrica para combinar a chave em vez de copiá-la. Cada dispositivo sai da fábrica com um par de chaves próprio (ou um certificado único gravado em um elemento seguro), e no primeiro contato faz uma troca do tipo ECDH com o servidor ou com o aplicativo do dono, gerando uma chave AES de sessão que nunca trafega pela rede. Assim cada aparelho tem a sua chave, um vazamento afeta só um dispositivo e a chave pode ser revogada ou trocada de forma remota.
+   O caminho é usar criptografia assimétrica para combinar a chave em vez de copiá-la. Cada dispositivo sai da fábrica com um par de chaves próprio (ou um certificado único gravado em um elemento seguro), e no primeiro contato faz uma troca do tipo ECDH com o servidor ou com o aplicativo do dono, gerando uma chave AES de sessão que nunca trafega pela rede.
 
 8. **No seu Projeto Final, qual é o pior estrago que alguém faria sem as camadas de hoje? Qual camada vocês vão levar pra lá, e por quê?**
 
-   No armário de empréstimo o pior estrago seria alguém publicar um comando de abertura no tópico do armário e retirar equipamentos sem registro, ou gravar devoluções falsas no banco para apagar a responsabilidade de quem pegou o equipamento. Vou levar o comando assinado com `comando|ts|assinatura` para a fechadura, porque é ele que impede abrir o armário com uma mensagem forjada ou repetida. Também vou levar o `setCACert()` em todas as conexões e o `autenticar()` com HMAC na rota que registra retiradas e devoluções, para que o histórico seja confiável, mantendo o `config.h` fora do GitHub.
-
----
-
-**Entrega:** este `ENTREGA.md` preenchido, `estacao_cofre.ino`, `worker.js` e `certificados.h`, no
-GitHub de cada um, **sem o `config.h`**.
+   No armário de empréstimo o pior estrago seria alguém publicar um comando de abertura no tópico do armário e retirar equipamentos sem registro, ou gravar devoluções falsas no banco para apagar a responsabilidade de quem pegou o equipamento. Vou levar o comando assinado com `comando|ts|assinatura` para a fechadura, porque é ele que impede abrir o armário com uma mensagem forjada ou repetida. 
